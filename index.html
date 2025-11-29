@@ -5,21 +5,18 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         html{font-family:'Inter',sans-serif}
-        /* 画面左端の隠されたリセットエリア */
         #hidden-reset-area {
             position: fixed;
             top: 0;
             left: 0;
-            width: 10%; /* 画面幅の10%をタップ可能にする */
+            width: 10%;
             height: 100%;
-            z-index: 100; /* 最前面に配置 */
-            /* 透明な状態です */
+            z-index: 100;
         }
     </style>
 </head>
 <body class="bg-amber-50 min-h-screen flex items-center justify-center p-4">
     
-    <!-- 画面左端のブランクエリア（5回タップでスタッフ画面へ） -->
     <div id="hidden-reset-area" onclick="onHiddenResetTap()"></div>
 
     <div id="app" class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-xl lg:max-w-2xl relative">
@@ -41,12 +38,10 @@
         </div>
 
         <div id="museum-selection" class="hidden space-y-4">
-            <!-- テキストを「助手が操作します。」に変更しました -->
             <p class="text-gray-600 text-center text-lg font-semibold" id="selection-header">助手が操作します。</p>
             <div id="museum-list" class="grid grid-cols-2 gap-4"></div>
             
             <div id="hidden-tap-area" class="hidden mt-6 w-full py-3 border border-dashed border-transparent transition duration-150 rounded-lg cursor-pointer">
-                <!-- このエリアはスタッフ画面表示用ではなく、全クリア後に助手を呼ぶためのエリアとして残します -->
             </div>
         </div>
 
@@ -81,8 +76,6 @@
             <button id="back-button" onclick="handleBackToSelection()" class="mt-4 w-full py-3 text-indigo-500 border border-indigo-500 rounded-lg hover:bg-indigo-50 transition duration-150 text-sm font-semibold">
                 戻る
             </button>
-            
-            <!-- 旧リセットボタンは削除されました -->
         </div>
 
         <div id="result-screen" class="hidden">
@@ -115,7 +108,6 @@
             <h3 class="font-semibold text-gray-700 mb-2">追加加算:</h3>
             <div id="bonus-list" class="space-y-3 mb-6"></div>
             
-            <!-- リセットボタンをスタッフ画面内に追加 -->
             <button onclick="resetGame()" class="w-full py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition duration-150 shadow-md">ゲームを完全にリセット</button>
 
             <button onclick="showSelectionScreen()" class="mt-4 w-full py-3 bg-slate-700 text-white font-semibold rounded-lg hover:bg-slate-800 transition duration-150 shadow-md">戻る</button>
@@ -157,6 +149,7 @@
             I: ['museum-selection', 'game-play', 'result-screen', 'staff-screen', 'initial-level-setup', 'real-chute-registration'],
         };
         
+        const STORAGE_KEY = 'kaitoN_game_state';
         let state;
         const ids = {
             timerDisplay:'timer-display',currentLevelDisplay:'current-level-display',currentMuseumTitle:'current-museum-title',startButton:'start-button',
@@ -181,6 +174,25 @@
             ELEMENTS[screenId]?.classList.remove('hidden');
         };
 
+        const saveState = () => {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            } catch (e) {
+                console.error('Failed to save state to localStorage:', e);
+            }
+        };
+
+        const loadState = () => {
+            try {
+                const serializedState = localStorage.getItem(STORAGE_KEY);
+                if (serializedState === null) return null;
+                return JSON.parse(serializedState);
+            } catch (e) {
+                console.error('Failed to load state from localStorage:', e);
+                return null;
+            }
+        };
+
         const calculateTotalScore = () => {
             const totalMuseumScore = Object.values(state.clearedData).reduce((sum, data) => sum + data.score, 0);
             const calculatedBonus = CD.B.reduce((sum, item) => sum + (state.bonusState[item.name] ? item.points : 0), 0);
@@ -189,6 +201,7 @@
 
         window.registerRealChuteResult = (isSuccess) => {
             state.bonusState['リアルチュートクリア'] = isSuccess;
+            saveState(); // 状態を保存
             renderInitialSetup();
         };
 
@@ -218,6 +231,7 @@
             state.fixedLevels[museumName] = { level: levelName, multiplier, timeLimitMs: CD.T[museumName][levelName] };
             updateLevelButtonUI(museumName, levelName);
             updateFinalizeButtonState();
+            saveState(); // 状態を保存
         };
 
         function renderInitialSetup() {
@@ -282,31 +296,21 @@
                 ELEMENTS.museumList.insertAdjacentHTML('beforeend', buttonHtml);
             });
             
-            // ユーザーの要望に合わせてテキストを更新しました
             ELEMENTS.selectionHeader.textContent = allCleared 
                 ? `全てのミュージアムの潜入が終わりました。手を挙げて助手を呼びましょう。`
                 : `助手が操作します。`;
             
-            // hidden-tap-areaは使わないので、そのまま非表示
-            // ELEMENTS.hiddenTapArea.classList.toggle('hidden', !allCleared);
-            // state.staffTapCount はhidden-reset-areaで管理する
-            
             showScreen('museum-selection');
         };
 
-        function updateBackButtonState() {
-            const isDisabled = state.isRunning && !state.isPaused; 
+        function updateBackButtonState(isDisabled) {
             ELEMENTS.backButton.disabled = isDisabled;
             ELEMENTS.backButton.classList.toggle('opacity-50', isDisabled);
             ELEMENTS.backButton.classList.toggle('cursor-not-allowed', isDisabled);
-            if (state.currentMuseum === 'ムール・ミュージアム' && state.isPaused) {
-                ELEMENTS.backButton.disabled = false;
-                ELEMENTS.backButton.classList.remove('opacity-50', 'cursor-not-allowed');
-            }
         }
 
         window.handleBackToSelection = () => {
-            if (!state.isRunning) showSelectionScreen();
+            if (!state.isRunning || state.elapsedTime > 0 && !state.isRunning) showSelectionScreen();
             else ELEMENTS.messageArea.textContent = 'タイマーが動作中は戻ることはできません。一時停止してからお戻りください。';
         };
 
@@ -345,7 +349,7 @@
                 ELEMENTS.answerInput.placeholder = CD.P[museumName] || '正解のキーワードを入力...';
             }
             
-            updateBackButtonState();
+            updateBackButtonState(false);
             showScreen('game-play');
         }
 
@@ -367,7 +371,7 @@
             ELEMENTS.messageArea.textContent = ``; 
             ELEMENTS.startButton.classList.add('hidden');
             
-            updateBackButtonState();
+            updateBackButtonState(true);
 
             const isMuuru = state.currentMuseum === 'ムール・ミュージアム';
             if (isMuuru) {
@@ -396,14 +400,15 @@
                 ELEMENTS.pauseButton.textContent = '再開';
                 ELEMENTS.pauseButton.classList.replace('bg-yellow-600', 'bg-blue-600');
                 ELEMENTS.pauseButton.classList.replace('hover:bg-yellow-700', 'hover:bg-blue-700');
+                updateBackButtonState(false);
             } else {
                 state.startTime = Date.now() - state.elapsedTime;
                 state.timerInterval = setInterval(updateTimer, 10);
                 ELEMENTS.pauseButton.textContent = '一時停止';
                 ELEMENTS.pauseButton.classList.replace('bg-blue-600', 'bg-yellow-600');
                 ELEMENTS.pauseButton.classList.replace('hover:bg-blue-700', 'hover:bg-yellow-700');
+                updateBackButtonState(true);
             }
-            updateBackButtonState();
         };
         
         function handleMuseumClear(timeElapsed) {
@@ -418,10 +423,15 @@
                 timeMs: timeElapsed, score, level: state.currentLevel, multiplier: state.currentMultiplier, isSuccess
             };
             
-            if (state.currentMuseum === 'ムール・ミュージアム') ELEMENTS.muuruControls.classList.add('hidden');
-            else { ELEMENTS.answerInput.disabled = true; ELEMENTS.answerButton.disabled = true; }
+            saveState(); // 状態を保存
             
-            updateBackButtonState();
+            ELEMENTS.startButton.classList.add('hidden');
+            ELEMENTS.answerArea.classList.add('hidden');
+            ELEMENTS.muuruControls.classList.add('hidden');
+            ELEMENTS.messageArea.textContent = '';
+
+            updateBackButtonState(false);
+            
             showResultScreen(score, timeElapsed, state.currentMuseum, state.currentLevel, false, isSuccess, timeLimitMs);
         }
 
@@ -442,7 +452,11 @@
 
         function showResultScreen(score, timeMs, museumName, levelName, isViewing, isSuccess = true, timeLimitMs) {
             const timeLimitDisplay = formatTime(timeLimitMs).slice(0, 5); 
-            ELEMENTS.resultTitle.textContent = isViewing ? `${museumName}リザルト` : isSuccess ? `${museumName}クリア成功！` : `${museumName}クリア失敗`;
+            const resultStatus = isSuccess ? 'クリア成功！' : 'クリア失敗';
+            ELEMENTS.resultTitle.innerHTML = isViewing 
+                ? `${museumName}リザルト` 
+                : `${museumName}${resultStatus}<br><span class="text-xl font-normal text-gray-700">手を挙げて助手を呼びましょう。</span>`;
+            
             ELEMENTS.resultLevel.textContent = levelName;
             ELEMENTS.museumTimeResult.textContent = formatTime(timeMs);
             ELEMENTS.targetTimeResult.textContent = timeLimitDisplay; 
@@ -460,6 +474,7 @@
                 ELEMENTS.totalBonusDisplay.textContent = `${calculatedBonus} Pt`;
                 ELEMENTS.staffTotalScore.textContent = `${finalScore} Pt`;
             }
+            saveState(); // 状態を保存
         };
 
         window.showStaffScreen = () => {
@@ -487,6 +502,8 @@
         window.resetGame = () => {
             if (state && state.timerInterval) clearInterval(state.timerInterval);
             
+            localStorage.removeItem(STORAGE_KEY);
+            
             const initialBonusState = CD.B.reduce((acc, item) => ({ ...acc, [item.name]: false }), {});
             state = {
                 clearedData: {}, fixedLevels: {}, currentMuseum: '', currentLevel: '', currentMultiplier: 0,
@@ -497,7 +514,17 @@
         };
 
         window.onload = () => {
-            window.resetGame();
+            const loadedState = loadState();
+            if (loadedState) {
+                state = loadedState;
+                if (Object.keys(state.fixedLevels).length === CD.S.length) {
+                    showSelectionScreen();
+                } else {
+                    showScreen('real-chute-registration');
+                }
+            } else {
+                window.resetGame();
+            }
         };
     </script>
 </body>
